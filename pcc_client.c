@@ -16,7 +16,7 @@ void send_to_server(uint32_t buffer_size, int socket_file, char* out_buffer){
         all_sent += now_sent;
 
         if(now_sent <= 0){
-            fprintf(stderr, "Failed to write data to server!\n");
+            fprintf(stderr, "Failed to write data to server!");
             exit(1);
         }
     }
@@ -45,6 +45,7 @@ int main(int argc, char *argv[]){
     struct in_addr IP;
     struct sockaddr_in serv_addr;
     unsigned int port;
+    int reading;
     uint32_t N, N_to_send, server_response;
     char *out_buffer, *N_buff;
     int socket_file = -1;
@@ -83,18 +84,6 @@ int main(int argc, char *argv[]){
         exit(1);
     }
 
-    // read from file and close file:
-    fseek(input_file, 0, SEEK_SET);
-
-    // ?
-   if(fread(out_buffer, 1, 1000000, input_file) != 0){
-        fprintf(stderr, "Failed to read from file!\n");
-        exit(1);
-    }
-    // --------
-
-    fclose(input_file);
-
     // set up socket:
     socket_file = socket(AF_INET, SOCK_STREAM, 0);
     if(socket_file < 0){
@@ -121,7 +110,18 @@ int main(int argc, char *argv[]){
     send_to_server(4, socket_file, N_buff);
 
     // write data to server:
-    send_to_server(N, socket_file, out_buffer);
+    // read from file and close file:
+    fseek(input_file, 0, SEEK_SET);
+
+    while (reading = fread(out_buffer, 1, 1000000, input_file) > 0){
+        send_to_server(1000000, socket_file, out_buffer);
+    }
+    
+    if(reading < 0){
+        perror("Failed to read from file!");
+        exit(1);
+    }
+    fclose(input_file);
 
     // get response from server:
     N_from_server = get_from_server(4, socket_file);
