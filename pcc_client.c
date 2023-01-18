@@ -7,132 +7,115 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-void send_to_server(uint32_t buffer_size, int socket_file, char* out_buffer){
-    int all_sent = 0;
-    int now_sent;
+void outputToServer(int fsocket, char* send_to_server_buffer){
+    int all_output;
+    int curr_output;
+    int buffer_size;
 
-    while(all_sent < buffer_size){
-        now_sent = write(socket_file, out_buffer + all_sent, buffer_size - all_sent);
-        all_sent += now_sent;
-
-        if(now_sent <= 0){
-            fprintf(stderr, "Failed to write data to server!");
+    all_output = 0;
+    buffer_size = sizeof(send_to_server_buffer);
+    while(all_output < buffer_size){
+        curr_output = write(fsocket, send_to_server_buffer + all_output, buffer_size);
+        all_output += curr_output;
+        if(curr_output <= 0){
+            perror("Failed to communicate with server");
             exit(1);
         }
     }
 }
 
-unsigned int get_from_server(int response_len, int socket_file){
-    unsigned int response;
+unsigned int inputFromServer(int fsocket, int input_len){
+    unsigned int input_from_server;
+    int all_input;
+    int curr_input;
 
-    int all_received = 0;
-    int now_received;
+    all_input = 0;
+    while(all_input < input_len){
+        curr_input = read(fsocket, &input_from_server, input_len);
+        all_input += curr_input;
 
-    while(all_received < response_len){
-        now_received = read(socket_file, &response, response_len - all_received);
-        all_received += now_received;
-
-        if(now_received <= 0){
-            fprintf(stderr, "Failed to get N to server!\n");
+        if(curr_input <= 0){
+            perror("Failed to communicate with server");
             exit(1);
         }
     }
-    return response;
+    return input_from_server;
 }
 
 
 int main(int argc, char *argv[]){
     struct in_addr IP;
     struct sockaddr_in serv_addr;
-    unsigned int port;
     int reading;
-    uint32_t N, N_to_send, server_response;
-    char *out_buffer, *N_buff;
-    int socket_file = -1;
-    unsigned int N_from_server;
-
-
+    unsigned int port_in_use, N_from_server;
+    char *message_buff, *N_buff;
+    int fsocket;
+    uint32_t N_to_send, printable_chars_cnt;
+    long int file_size;
     FILE *input_file;
 
     if(argc != 4){
-        fprintf(stderr, "%s\n", strerror(EINVAL));
+        perror("Incorrect number of arguments");
         exit(1);
     }
 
-    port = atoi(argv[2]);
+    port_in_use = atoi(argv[2]);
 
     if(inet_pton(AF_INET, argv[1], &IP) != 1){
-        perror("Failed to get IP!");
+        perror("Failed to retrieve IP");
         exit(1);
     }
 
-    // open file
     input_file = fopen(argv[3], "rb");
     if(input_file == NULL){
-        perror("Can't open input file");
+        perror("Failed to open input file");
         exit(1);
     }
 
-    // get file size in bytes:
     fseek(input_file, 0, SEEK_END);
-    N = ftell(input_file);
+    file_size = ftell(input_file); /* retrieve the file size */
 
-    // setting send buffer:
-    out_buffer = calloc(1000000, sizeof(char));
-    if(out_buffer == NULL){
-        perror("Failed to malloc!");
+    message_buff = calloc(1000000, sizeof(char)); /* allocated 1MB for buffer */
+    if(message_buff == NULL){
+        perror("Failed to allocate buffer");
         exit(1);
     }
 
-    // set up socket:
-    socket_file = socket(AF_INET, SOCK_STREAM, 0);
-    if(socket_file < 0){
-        perror("Failed to creat socket!");
+    /* socket set-up */
+    fsocket = socket(AF_INET, SOCK_STREAM, 0);
+    if(fsocket < 0){
+        perror("Setting up socket failed");
         exit(1);
     }
 
-
-    // set up server and connect:
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
+    serv_addr.sin_port_in_use = htons(port_in_use);
     serv_addr.sin_addr = IP;
 
-    if(connect(socket_file, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0){
-        perror("Failed to connect!");
+    if(connect(fsocket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0){
+        perror("Failed to connect to server");
         exit(1);
     }
 
-    // write N to server:
-    N_to_send = htonl(N);
-    N_buff = (char *) &N_to_send;
+    N_to_send = htonl(file_size);
+    N_buff = (char*) &N_to_send;
 
-    send_to_server(4, socket_file, N_buff);
-
-    // write data to server:
-    // read from file and close file:
+    outputToServer(fsocket, N_buff); /* send message size to server prior to content*/
     fseek(input_file, 0, SEEK_SET);
 
-    while (reading = fread(out_buffer, 1, 1000000, input_file) > 0){
-        send_to_server(1000000, socket_file, out_buffer);
+    while (reading = fread(message_buff, 1, 1000000, input_file) > 0){ /* send message content up to 1MB at once */
+        outputToServer(fsocket, message_buff);
     }
     
     if(reading < 0){
-        perror("Failed to read from file!");
+        perror("Failed to read from input file");
         exit(1);
     }
     fclose(input_file);
 
-    // get response from server:
-    N_from_server = get_from_server(4, socket_file);
-
-    server_response = ntohl(N_from_server);
-    if(server_response < 0){
-        perror("Failed to nthol!");
-        exit(1);
-    }
-
-    printf("# of printable characters: %u\n", server_response);
-    free(out_buffer);
+    N_from_server = inputFromServer(fsocket, 4); /* less than 1MB, retrieve the printable chars counter from server */
+    printable_chars_cnt = ntohl(N_from_server); 
+    printf("# of printable characters: %u\n", printable_chars_cnt);
     return 0;
 }
