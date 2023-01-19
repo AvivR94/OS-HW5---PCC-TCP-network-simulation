@@ -33,7 +33,6 @@ unsigned int inputFromServer(int fsocket, int input_len){
     while(all_input < input_len){
         curr_input = read(fsocket, &input_from_server, input_len);
         all_input += curr_input;
-
         if(curr_input <= 0){
             perror("Failed to communicate with server");
             exit(1);
@@ -52,7 +51,7 @@ int main(int argc, char *argv[]){
     int fsocket;
     uint32_t N_to_send, printable_chars_cnt;
     long int file_size;
-    FILE *input_file;
+    FILE *specified_file;
 
     if(argc != 4){
         perror("Incorrect number of arguments");
@@ -66,14 +65,14 @@ int main(int argc, char *argv[]){
         exit(1);
     }
 
-    input_file = fopen(argv[3], "rb");
-    if(input_file == NULL){
+    specified_file = fopen(argv[3], "rb");
+    if(specified_file == NULL){
         perror("Failed to open input file");
         exit(1);
     }
 
-    fseek(input_file, 0, SEEK_END);
-    file_size = ftell(input_file); /* retrieve the file size */
+    fseek(specified_file, 0, SEEK_END);
+    file_size = ftell(specified_file); /* retrieve the file size */
 
     message_buff = calloc(1000000, sizeof(char)); /* allocated 1MB for buffer */
     if(message_buff == NULL){
@@ -101,10 +100,10 @@ int main(int argc, char *argv[]){
     N_to_send = htonl(file_size);
     N_buff = (char*) &N_to_send;
 
-    outputToServer(fsocket, N_buff); /* send message size to server prior to content*/
-    fseek(input_file, 0, SEEK_SET);
+    outputToServer(fsocket, N_buff); /* send message size to server prior to content */
+    fseek(specified_file, 0, SEEK_SET);
 
-    while (reading = fread(message_buff, 1, 1000000, input_file) > 0){ /* send message content up to 1MB at once */
+    while (reading = fread(message_buff, 1, 1000000, specified_file) > 0){ /* send message content up to 1MB at once */
         outputToServer(fsocket, message_buff);
     }
     
@@ -112,7 +111,7 @@ int main(int argc, char *argv[]){
         perror("Failed to read from input file");
         exit(1);
     }
-    fclose(input_file);
+    fclose(specified_file);
 
     N_from_server = inputFromServer(fsocket, 4); /* less than 1MB, retrieve the printable chars counter from server */
     printable_chars_cnt = ntohl(N_from_server); 
