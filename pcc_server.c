@@ -1,195 +1,157 @@
-
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <signal.h>
-#include <string.h>
 #include <unistd.h>
-#include <netinet/in.h>
+#include <errno.h>
+#include <assert.h>
+#include <string.h>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
-unsigned int port_in_use;
-unsigned int printables[95];
-int curr_connections; 
-int finish_and_terminate; 
+int fconnection = -1; /* -1 means no connections, 1 means connected to client/s */
+int finish_and_terminate = 0; /* 0 means go on, 1 means do operation */
+uint32_t printables[95];
 
-curr_connections = 0; /* 0 means no connections, 1 means connected to client/s */
-finish_and_terminate = 0; /* 0 means go on, 1 means do operation */
-/* counts the printable chars of the message received from client */
-int charsCounter(char * message, int message_len){
-    int cnt;
-    int i;
-
-    cnt = 0;
-    for (i = 0; i < message_len; i++){
-        if (message[i] >= 32 && message[i] <= 126){
-            cnt++;
-            printables[msg[i]-32]++;
-        }
-    }
-    return cnt;
-}
-
-/* prints the requested output and then closes the program */
 void terminateServer(){
     int i;
-
-    for (i = 0; i < 95; i++)
-        printf("char '%c' : %u times\n", i + 32, printables[i]);
+    
+    for(i = 0; i < 95; i++){
+        printf("char '%c' : %u times\n", i+32, printables[i]);
+    }
     exit(0);
 }
 
-/* if a signal is invoked */
 void signal_handler_func(){
-    if (curr_connections < 1)
+    if(fconnection < 0)
         terminateServer();
     else
-        finish_and_terminate = 1;
+        finish_and_terminate = 1; /* if there's an open connection, finish the process and then terminate*/
 }
 
-/* writing the output to the client */
-int outputToClient(int fconnection, char* send_to_client_buffer){
-    int all_output
-    int curr_output;
-    int buffer_size;
-
-    all_output = 0;
-    buffer_size = sizeof(send_to_client_buffer);
-    while (all_output < buffer_size){
-        curr_output = write(fconnection, send_to_client_buffer + all_output, buffer_size);
-        all_output += curr_output;
-        if (curr_output < 0){
-            if (errno == ETIMEDOUT && errno == ECONNRESET && errno == EPIPE) 
-                return 1; /* invokes continue */
-            else
-                return -1; /* invokes exiting the program */
-        }
-    }
-    return 0;
+/* straight to exit = 1 means terminate the program stat, else inspect the case of error */
+int errorOccured(char* to_print, int straight_to_exit){
+    perror(to_print);
+    if (straight_to_exit == 1)
+        exit(1);
+    if (errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE)
+        return 1;
+    else
+        exit(1);
+    return 0; /* shouldnt get here, just because int output func */
 }
 
-int inputFromClient(int fconnection, char* message_buff, int buff_size){
-    int curr_input;
-    int all_input;
-    int buff_size;
+/* recieve message content from client */
+uint32_t recieveContentFromClient(int message_len){
+    uint32_t chars_counted;
+    int recieved_input;
+    char input_content_buffer[1000000]; /* up to 1MB  */
+    int i; 
 
-    all_input = 0;
-    buff_size = sizeof(message_buff);
-    while (buff_size > 0){
-        curr_input = read(fconnection, message_buff + all_input, buff_size);
-        all_input += curr_input;
-        if (curr_input < 0){
-            if (errno == ETIMEDOUT && errno == ECONNRESET && errno == EPIPE)
-                return 1; /* invokes continue */                                   
-            else
-                return -1; /* invokes exiting the program */
+    recieved_input = 0;
+    chars_counted = 0;
+    while (message_len > 0){
+        recieved_input = read(fconnection, input_content_buffer, sizeof(input_content_buffer));
+        message_len -= recieved_input;
+        if (recieved_input < 0){  
+            if (errorOccured("Reading from client failed", 0) == 1){
+                close(fconnection);
+                fconnection = -1;
+                return 0;
+            }
+        }
+        /* count the printable chars to send back eventually to the client, and also keep the count overall in pritables DB*/
+        for(i = 0; i < recieved_input; i++){
+            if(input_content_buffer[i] >= 32 && input_content_buffer[i] <= 126){
+                chars_counted++;
+                printables[(input_content_buffer[i]-32)]++;
+            }
         }
     }
-    return 0;
-}
-
-/* helper func for main, used for reaction to return value of connections with client
-   returns 1 if there's a need to continue in the while loop of the connection, and 0 otherwise
-   exits the program if there's a fatal error */
-int checkRetVal(int ret_val, int fconnection){
-    if (ret_val != 0){
-        perror("Failed to communicate with client");
-        if (ret_val == -1)
-            exit(1);
-        else{
-            close(fconnection);
-            fconnection = -1;
-            return 1; /* means invoke continue in while loop */
-        }
-    }
-    return 0; /* means do nothing */
+    return chars_counted;
 }
 
 int main(int argc, char *argv[]){
+    int option_val = 1;
+    int flisten = -1;
+    int port_in_use;
+    int sent_output;
+    int recieved_input;
+	char* input_N_buffer;
+    char* output_C_buffer;
+    uint32_t file_size, chars_counted_to_send;
     struct sockaddr_in serv_addr;
-    int fconnection;
-    int flisten;
-    int option_val;
-    int chars_counted;
-    int ret_val;
-    int32_t N, C_send_to_client, message_len;
-    char *N_buffer, *message_buff, *send_to_client_buffer;
 
-    if (argc != 2){
-        perror("Incorrect number of arguments");
-        exit(1);
-    }
+    if (argc != 2)
+        errorOccured("Incorrect number of arguments", 1);
+
     port_in_use = atoi(argv[1]);
 
     /* signal handler set-up */
     struct sigaction sigint;
-    memset(&sigint, 0, sizeof(sigint));
-    sigint.sa_handler = &signal_handler_func;
-    sigint.sa_flags = SA_RESTART;
-    if (sigaction(SIGINT, &sigint, NULL) != 0){
-        perror("Creation of signal handler failed");
-        exit(1);
-    }
+	sigint.sa_handler = &signal_handler_func;
+	sigemptyset(&sigint.sa_mask);
+	sigint.sa_flags = SA_RESTART;
+	if (sigaction(SIGINT, &sigint, 0) != 0) 
+        errorOccured("Creation of signal handler failed", 1);
 
     /* socket set-up */
-    socklen_t addrsize = sizeof(struct sockaddr_in);
-    flisten = socket(AF_INET, SOCK_STREAM, 0);
-    if (setsockopt(flisten, SOL_SOCKET, SO_REUSEADDR, &option_val, sizeof(int)) < 0){
-        perror("Setting up the socket failed");
-        exit(1);
-    }
+    if ((flisten = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        errorOccured("Setting up the socket failed", 1);
 
-    memset(&serv_addr, 0, addrsize);
+    if(setsockopt(flisten, SOL_SOCKET, SO_REUSEADDR, &option_val, sizeof(int)) < 0)
+        errorOccured("Setting up the socket failed", 1);
+
+    memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port_in_use = htons(port_in_use);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    serv_addr.sin_port = htons(port_in_use); 
 
-    if (bind(flisten, (struct sockaddr*) &serv_addr, addrsize) != 0){
-        perror("Binding the socket failed");
-        exit(1);
-    }
+    /* bind and listen init */
+    if (bind(flisten, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) != 0)
+        errorOccured("Binding the socket failed", 1);
+        
+    if (listen(flisten, 10) != 0)
+        errorOccured("Listen to connections failed", 1);
 
-    if (listen(flisten, 10) != 0){
-        perror("Listen to connections failed");
-        exit(1);
-    }
-
-    fconnection = -1;
-    /* acceptance and action as long as program is running */
+    /* run as long as the server is up */
     while (1){
-        if (finish_and_terminate == 1)
+        if(finish_and_terminate == 1) /* signal handler invoked */
             terminateServer();
 
         fconnection = accept(flisten, NULL, NULL);
-        if (fconnection < 0){
-            perror("Accept connection failed");
-            if (errno == ETIMEDOUT && errno == ECONNRESET && errno == EPIPE)
+        if (fconnection < 0)
+            errorOccured("Accept connection failed", 0);
+        
+        /* recieve message length (its file size) from the client */
+        input_N_buffer = (char*)&file_size;
+		recieved_input = read(fconnection, input_N_buffer, 4); /* less than 1MB */
+	    if(recieved_input < 0){
+            if (errorOccured("Reading from client failed", 0) == 1){
+                close(fconnection);
+                fconnection = -1;
                 continue;
-            else
-                exit(1);
+            }
         }
-        curr_connections = 1; /* server is connected to a client */
-        N_buffer = (char*)&N;
-        ret_val = inputFromClient(fconnection, N_buffer, 4); /* reading message len (N) from client */
-        if (checkRetVal(ret_val, fconnection) == 1)
-            continue;
-        message_len = ntohl(N);
 
-        /* allocation for message buffer up to 1MB */
-        message_buff = (char*) calloc(1000000, sizeof(char));
-        ret_val = inputFromClient(fconnection, message_buff, message_len); /* reading message from client */
-        if (checkRetVal(ret_val, fconnection) == 1)
+        /* recieve message content from client and get the printables count to send to the client back */
+        chars_counted_to_send = htonl(recieveContentFromClient(ntohl(file_size)));
+        if (fconnection == -1) /* if reading from the client failed during the helper func, continue to the next client - connection closed */
             continue;
         
-        chars_counted = charsCounter(message_buff, message_len);
-        C_send_to_client = htonl(chars_counted); 
-        send_to_client_buffer = (char*)&C_send_to_client; /* C is 32-bit int, so garuanteed less than 1MB */
-        ret_val = outputToClient(fconnection, send_to_client_buffer); /* sending the counted printables number (C) to client */
-        if (checkRetVal(ret_val, fconnection) == 1)
-            continue;
-        close(fconnection); /* finished with the client, may move on to the next one */ 
+        /* send to the client the number of printable chars from its message content */
+        output_C_buffer =(char*)&chars_counted_to_send;
+	    sent_output = write(fconnection, output_C_buffer, 4);
+	    if(sent_output < 0 || sent_output != 4){ 
+            if (errorOccured("Sending to client failed", 0) == 1){
+                close(fconnection);
+                fconnection = -1;
+                continue;
+            }
+        }
+
+        close(fconnection);
         fconnection = -1;
-        curr_connections = 0;
     }
-    return 0;
 }
