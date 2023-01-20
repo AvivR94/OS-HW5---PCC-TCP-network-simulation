@@ -1,4 +1,3 @@
-#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -61,7 +60,7 @@ int main(int argc, char *argv[]){
 		errorOccured("Setting up socket failed");
 
 	/* IP set-up */
-    if(inet_pton(AF_INET, argv[1], &IP) != 1){
+	if(inet_pton(AF_INET, argv[1], &IP) != 1){
         errorOccured("Failed to retrieve IP");
 	}
 
