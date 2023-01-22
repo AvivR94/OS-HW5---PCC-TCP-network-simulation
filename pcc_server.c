@@ -20,11 +20,10 @@ int finish_and_terminate = 0; /* 0 means go on, 1 means terminate the program af
   helper functions */
 
 /* straight to exit = 1 means terminate the program stat, else inspect the case of error */
-int errorOccured(char* to_print, int straight_to_exit){
+void errorOccured(char* to_print, int straight_to_exit){
     perror(to_print);
     if ((straight_to_exit == 1) || (errno != ETIMEDOUT && errno != ECONNRESET && errno != EPIPE))
         exit(1);
-    return 1;
 }
 
 void terminateServer(){
@@ -113,11 +112,10 @@ uint32_t receiveContentFromClient(int message_len){
         received_input = read(fconnection, input_content_buffer, sizeof(input_content_buffer));
         message_len -= received_input;
         if (received_input < 0){  
-            if (errorOccured("Reading from client failed", 0) == 1){
-                close(fconnection);
-                fconnection = 0;
-                return 0; /* return to the while loop of the server with closed connection to go on to the next connection */
-            }
+            errorOccured("Reading from client failed", 0);
+            close(fconnection);
+            fconnection = 0;
+            return 0; /* return to the while loop of the server with closed connection to go on to the next connection */
         }
         /* count the printable chars from all content to send it back eventually to the client */
         chars_counted += countPrintableChars(input_content_buffer, received_input);
@@ -159,11 +157,10 @@ int main(int argc, char *argv[]){
         input_N_buffer = (char*)&file_size;
 		received_input = read(fconnection, input_N_buffer, 4); /* less than 1MB */
 	    if(received_input < 0){
-            if (errorOccured("Reading from client failed", 0) == 1){
-                close(fconnection);
-                fconnection = 0;
-                continue;
-            }
+            errorOccured("Reading from client failed", 0);
+            close(fconnection);
+            fconnection = 0;
+            continue;
         }
 
         /* receive message content from client and get the printables count to send to the client back */
@@ -175,11 +172,10 @@ int main(int argc, char *argv[]){
         output_C_buffer =(char*)&chars_counted_to_send;
 	    sent_output = write(fconnection, output_C_buffer, 4);
 	    if(sent_output != 4){ 
-            if (errorOccured("Sending to client failed", 0) == 1){
-                close(fconnection);
-                fconnection = 0;
-                continue;
-            }
+            errorOccured("Sending to client failed", 0);
+            close(fconnection);
+            fconnection = 0;
+            continue;
         }
 
         close(fconnection);
