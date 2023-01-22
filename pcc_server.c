@@ -176,9 +176,10 @@ int main(int argc, char *argv[]){
         pcc_temp = (uint32_t*) calloc(95, sizeof(uint32_t));
         /* receive message content from client and get the printable chars count to send to the client back */
         chars_counted_of_client = htonl(receiveContentFromClient(ntohl(file_size), pcc_temp));
-        if (fconnection <= 0) /* if reading from the client failed during the helper func, continue to the next client - connection closed */
+        if (fconnection <= 0){ /* if reading from the client failed during the helper func, continue to the next client - connection closed */
+            free(pcc_temp);
             continue;
-        
+        }
         /* send to the client the number of printable chars from its message content */
         output_C_buffer =(char*)&chars_counted_of_client;
 	    sent_output = write(fconnection, output_C_buffer, 4); /* up to 1MB */
@@ -186,6 +187,7 @@ int main(int argc, char *argv[]){
             errorOccured("Sending to client failed", 0);
             close(fconnection);
             fconnection = 0;
+            free(pcc_temp);
             continue;
         }
         
