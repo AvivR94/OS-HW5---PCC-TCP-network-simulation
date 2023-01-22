@@ -9,6 +9,10 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+struct sockaddr_in serv_addr; 
+struct in_addr IP;
+int fconnection = -1;
+
 int errorOccured(char* to_print){
 	perror(to_print);
 	exit(1);
@@ -20,47 +24,36 @@ void sendContentToServer(FILE* specified_file, int fconnection){
 	int data_sent;
 
 	while(1){
-        reading = fread(output_content_buffer, 1, sizeof(output_content_buffer), specified_file); 
+        reading = fread(output_content_buffer, 1, sizeof(output_content_buffer), specified_file); /* read from the file up to 1MB */ 
         if (reading > 0){
-            data_sent = write(fconnection, output_content_buffer, reading);
+            data_sent = write(fconnection, output_content_buffer, reading); /* send to the server the chunk that was read */
             if (data_sent != reading)
                 errorOccured("Failed to send content from file to server");
         }
-        else
+        else if (reading == 0) /* when reading is done */
             break;
+		else /* reading has a negative value */
+			errorOccured("Failed to read from the file");
     }
 }
 
-int main(int argc, char *argv[]){
-	struct sockaddr_in serv_addr; 
-	struct in_addr IP;
-	FILE* specified_file;
-	int fconnection = -1;
-	char* output_N_buffer;
-    char* input_N_buffer;
-	int data_sent;
-	int recieved_input;
-    int port_in_use;
-    int printable_char_cnt;
-	uint32_t file_size, output_to_send, input_from_server;
-
-	if (argc != 4)
-        errorOccured("Incorrect number of arguments");
-
-    port_in_use = atoi(argv[2]);
-	if ((specified_file = fopen(argv[3],"rb")) == NULL)
-        errorOccured("Failed to open input file");
+uint32_t retrieveFileSize(FILE* specified_file){
+	uint32_t file_size;
 
 	fseek(specified_file, 0, SEEK_END);
-	file_size = ftell(specified_file);
+	file_size = ftell(specified_file); /* retrieve the file length */
 	fseek(specified_file, 0, SEEK_SET);
 
+	return file_size;
+}
+
+void clientSetUp(char* server_ip_address, int port_in_use){
 	/* socket set-up */
 	if ((fconnection = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		errorOccured("Setting up socket failed");
 
 	/* IP set-up */
-	if(inet_pton(AF_INET, argv[1], &IP) != 1){
+	if(inet_pton(AF_INET, server_ip_address, &IP) != 1){
         errorOccured("Failed to retrieve IP");
 	}
 
@@ -72,11 +65,35 @@ int main(int argc, char *argv[]){
 	/* init connection */
 	if (connect(fconnection, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 		errorOccured("Failed to connect to server");
+}
+
+int main(int argc, char *argv[]){
+	FILE* specified_file;
+	char* output_N_buffer;
+    char* input_N_buffer;
+	char* server_ip_address;
+	int data_sent;
+	int recieved_input;
+    int port_in_use;
+    int printable_char_cnt;
+	uint32_t file_size, output_to_send, input_from_server;
+
+	if (argc != 4)
+        errorOccured("Incorrect number of arguments");
+
+	server_ip_address = argv[1];
+    port_in_use = atoi(argv[2]);
+	
+	if ((specified_file = fopen(argv[3],"rb")) == NULL)
+        errorOccured("Failed to open input file");
+	file_size = retrieveFileSize(specified_file);
+
+	clientSetUp(server_ip_address, port_in_use);
 
 	/* send N, the file size to the server */
 	output_to_send = (htonl(file_size));
 	output_N_buffer = (char*)&output_to_send;
-	data_sent = write(fconnection, output_N_buffer, sizeof(output_to_send));
+	data_sent = write(fconnection, output_N_buffer, 4); /* up to 1MB */
 	if(data_sent < 0)
 		errorOccured("Failed to send file size to server");
         	
@@ -87,7 +104,7 @@ int main(int argc, char *argv[]){
 	/* recieve the number of printable chars in the file content from the server */
 	recieved_input = 0;
     input_N_buffer = (char*)&input_from_server;
-    recieved_input = read(fconnection, input_N_buffer, 4);
+    recieved_input = read(fconnection, input_N_buffer, 4); /* up to 1MB */
     if(recieved_input < 0){
         errorOccured("Failed to communicate with server");
 	}
