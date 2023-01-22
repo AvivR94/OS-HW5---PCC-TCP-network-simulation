@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-uint32_t printables[95];
+uint32_t pcc_total[95];
 struct sockaddr_in serv_addr;
 struct sigaction sigint;
 int fconnection = 0; /* 0 means no connections, positive num means connected to client/s */
@@ -30,7 +30,7 @@ void terminateServer(){
     int i;
     
     for(i = 0; i < 95; i++){
-        printf("char '%c' : %u times\n", i+32, printables[i]);
+        printf("char '%c' : %u times\n", i+32, pcc_total[i]);
     }
     exit(0);
 }
@@ -86,7 +86,7 @@ int serverSetUp(int port_in_use){
     return flisten;
 }
 
-int countPrintableChars(char* buffer, int received_input){
+int countPrintableChars(char* buffer, int received_input, uint32_t* pcc_temp){
     int i;
     int iter_chars_counted;
 
@@ -94,14 +94,14 @@ int countPrintableChars(char* buffer, int received_input){
     for(i = 0; i < received_input; i++){
             if(buffer[i] >= 32 && buffer[i] <= 126){
                 iter_chars_counted++;
-                printables[(buffer[i]-32)]++; /* keep track of overall printables for server */
+                pcc_temp[(buffer[i]-32)]++; /* keep track of printable chars of the client for server's statistics */
             }
         }
     return iter_chars_counted;
 }
 
 /* receive message content from client */
-uint32_t receiveContentFromClient(int message_len){
+uint32_t receiveContentFromClient(int message_len, uint32_t* pcc_temp){
     uint32_t chars_counted;
     int received_input;
     char input_content_buffer[1000000]; /* up to 1MB  */
@@ -118,9 +118,18 @@ uint32_t receiveContentFromClient(int message_len){
             return 0; /* return to the while loop of the server with closed connection to go on to the next connection */
         }
         /* count the printable chars from all content to send it back eventually to the client */
-        chars_counted += countPrintableChars(input_content_buffer, received_input);
+        chars_counted += countPrintableChars(input_content_buffer, received_input, pcc_temp);
     }
+    
     return chars_counted;
+}
+
+/* if the connection with client was successful, update global pcc_total */
+void updatePCCTotal(uint32_t* pcc_temp){
+    int i;
+
+    for(i = 0; i < 95; i++)
+        pcc_total[i] += pcc_temp[i]; /* keep track of global pcc_total for server statistics */
 }
 
 /* end of helper functions
@@ -133,7 +142,9 @@ int main(int argc, char *argv[]){
     int received_input;
 	char* input_N_buffer;
     char* output_C_buffer;
-    uint32_t file_size, chars_counted_to_send;
+    uint32_t chars_counted_of_client;
+    uint32_t file_size;
+    uint32_t* pcc_temp;
 
     if (argc != 2)
         errorOccured("Incorrect number of arguments", 1);
@@ -162,14 +173,14 @@ int main(int argc, char *argv[]){
             fconnection = 0;
             continue;
         }
-
-        /* receive message content from client and get the printables count to send to the client back */
-        chars_counted_to_send = htonl(receiveContentFromClient(ntohl(file_size)));
+        pcc_temp = (uint32_t*) calloc(95, sizeof(uint32_t));
+        /* receive message content from client and get the pcc_total count to send to the client back */
+        chars_counted_of_client = htonl(receiveContentFromClient(ntohl(file_size), pcc_temp));
         if (fconnection <= 0) /* if reading from the client failed during the helper func, continue to the next client - connection closed */
             continue;
         
         /* send to the client the number of printable chars from its message content */
-        output_C_buffer =(char*)&chars_counted_to_send;
+        output_C_buffer =(char*)&chars_counted_of_client;
 	    sent_output = write(fconnection, output_C_buffer, 4); /* up to 1MB */
 	    if(sent_output != 4){ 
             errorOccured("Sending to client failed", 0);
@@ -177,7 +188,9 @@ int main(int argc, char *argv[]){
             fconnection = 0;
             continue;
         }
-
+        
+        updatePCCTotal(pcc_temp);
+        free(pcc_temp);
         close(fconnection);
         fconnection = 0;
     }
