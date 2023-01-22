@@ -170,7 +170,7 @@ int main(int argc, char *argv[]){
         
         /* send to the client the number of printable chars from its message content */
         output_C_buffer =(char*)&chars_counted_to_send;
-	    sent_output = write(fconnection, output_C_buffer, 4);
+	    sent_output = write(fconnection, output_C_buffer, 4); /* up to 1MB */
 	    if(sent_output != 4){ 
             errorOccured("Sending to client failed", 0);
             close(fconnection);

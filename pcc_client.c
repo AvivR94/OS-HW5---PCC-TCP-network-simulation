@@ -13,28 +13,12 @@ struct sockaddr_in serv_addr;
 struct in_addr IP;
 int fconnection = -1;
 
+/*----------------
+  helper functions */
+
 int errorOccured(char* to_print){
 	perror(to_print);
 	exit(1);
-}
-
-void sendContentToServer(FILE* specified_file, int fconnection){
-	char output_content_buffer[1000000]; /* up to 1MB */
-	int reading;
-	int data_sent;
-
-	while(1){
-        reading = fread(output_content_buffer, 1, sizeof(output_content_buffer), specified_file); /* read from the file up to 1MB */ 
-        if (reading > 0){
-            data_sent = write(fconnection, output_content_buffer, reading); /* send to the server the chunk that was read */
-            if (data_sent != reading)
-                errorOccured("Failed to send content from file to server");
-        }
-        else if (reading == 0) /* when reading is done */
-            break;
-		else /* reading has a negative value */
-			errorOccured("Failed to read from the file");
-    }
 }
 
 uint32_t retrieveFileSize(FILE* specified_file){
@@ -66,6 +50,28 @@ void clientSetUp(char* server_ip_address, int port_in_use){
 	if (connect(fconnection, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 		errorOccured("Failed to connect to server");
 }
+
+void sendContentToServer(FILE* specified_file, int fconnection){
+	char output_content_buffer[1000000]; /* up to 1MB */
+	int reading;
+	int data_sent;
+
+	while(1){
+        reading = fread(output_content_buffer, 1, sizeof(output_content_buffer), specified_file); /* read from the file up to 1MB */ 
+        if (reading > 0){
+            data_sent = write(fconnection, output_content_buffer, reading); /* send to the server the chunk that was read */
+            if (data_sent != reading)
+                errorOccured("Failed to send content from file to server");
+        }
+        else if (reading == 0) /* when reading is done */
+            break;
+		else /* reading has a negative value */
+			errorOccured("Failed to read from the file");
+    }
+}
+
+/* end of helper functions
+   ----------------------- */
 
 int main(int argc, char *argv[]){
 	FILE* specified_file;
