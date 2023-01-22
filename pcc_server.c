@@ -174,7 +174,7 @@ int main(int argc, char *argv[]){
             continue;
         }
         pcc_temp = (uint32_t*) calloc(95, sizeof(uint32_t));
-        /* receive message content from client and get the pcc_total count to send to the client back */
+        /* receive message content from client and get the printable chars count to send to the client back */
         chars_counted_of_client = htonl(receiveContentFromClient(ntohl(file_size), pcc_temp));
         if (fconnection <= 0) /* if reading from the client failed during the helper func, continue to the next client - connection closed */
             continue;
@@ -189,7 +189,7 @@ int main(int argc, char *argv[]){
             continue;
         }
         
-        updatePCCTotal(pcc_temp);
+        updatePCCTotal(pcc_temp); /* add the printable chars of the client to the global pcc for server's statistics */
         free(pcc_temp);
         close(fconnection);
         fconnection = 0;
