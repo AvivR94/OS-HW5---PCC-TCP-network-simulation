@@ -76,10 +76,10 @@ void sendContentToServer(FILE* specified_file, int fconnection){
 int main(int argc, char *argv[]){
 	FILE* specified_file;
 	char* output_N_buffer;
-    char* input_N_buffer;
+    char* input_C_buffer;
 	char* server_ip_address;
 	int data_sent;
-	int recieved_input;
+	int received_input;
     int port_in_use;
     int printable_char_cnt;
 	uint32_t file_size, output_to_send, input_from_server;
@@ -107,11 +107,11 @@ int main(int argc, char *argv[]){
     sendContentToServer(specified_file, fconnection);
 	fclose(specified_file);
 
-	/* recieve the number of printable chars in the file content from the server */
-	recieved_input = 0;
-    input_N_buffer = (char*)&input_from_server;
-    recieved_input = read(fconnection, input_N_buffer, 4); /* up to 1MB */
-    if(recieved_input < 0){
+	/* receive the number of printable chars in the file content from the server */
+	received_input = 0;
+    input_C_buffer = (char*)&input_from_server;
+    received_input = read(fconnection, input_C_buffer, 4); /* up to 1MB */
+    if(received_input < 0){
         errorOccured("Failed to communicate with server");
 	}
 

@@ -111,8 +111,11 @@ uint32_t receiveContentFromClient(int message_len, uint32_t* pcc_temp){
     while (message_len > 0){
         received_input = read(fconnection, input_content_buffer, sizeof(input_content_buffer));
         message_len -= received_input;
-        if (received_input < 0){  
-            errorOccured("Reading from client failed", 0);
+        if (received_input <= 0){  
+            if (received_input == 0)
+                fprintf(stderr, "Connection with client failed\n");
+            else
+                errorOccured("Reading from client failed", 0);
             close(fconnection);
             fconnection = 0;
             return 0; /* return to the while loop of the server with closed connection to go on to the next connection */
@@ -143,7 +146,7 @@ int main(int argc, char *argv[]){
 	char* input_N_buffer;
     char* output_C_buffer;
     uint32_t chars_counted_of_client;
-    uint32_t file_size;
+    uint32_t message_len;
     uint32_t* pcc_temp;
 
     if (argc != 2)
@@ -165,17 +168,20 @@ int main(int argc, char *argv[]){
         }
         
         /* receive message length (its file size) from the client */
-        input_N_buffer = (char*)&file_size;
+        input_N_buffer = (char*)&message_len;
 		received_input = read(fconnection, input_N_buffer, 4); /* less than 1MB */
-	    if(received_input < 0){
-            errorOccured("Reading from client failed", 0);
+        if (received_input <= 0){
+            if(received_input == 0)
+                fprintf(stderr, "Connection with client failed\n");
+            else /* if received_input < 0 */
+                errorOccured("Reading from client failed", 0);
             close(fconnection);
             fconnection = 0;
             continue;
         }
-        pcc_temp = (uint32_t*) calloc(95, sizeof(uint32_t));
+        pcc_temp = (uint32_t*) calloc(95, sizeof(uint32_t)); /* used to store printable chars for each client temporarily until copied to global pcc_total */
         /* receive message content from client and get the printable chars count to send to the client back */
-        chars_counted_of_client = htonl(receiveContentFromClient(ntohl(file_size), pcc_temp));
+        chars_counted_of_client = htonl(receiveContentFromClient(ntohl(message_len), pcc_temp));
         if (fconnection <= 0){ /* if reading from the client failed during the helper func, continue to the next client - connection closed */
             free(pcc_temp);
             continue;
@@ -190,10 +196,10 @@ int main(int argc, char *argv[]){
             free(pcc_temp);
             continue;
         }
-        
+
+        close(fconnection);
+        fconnection = 0;        
         updatePCCTotal(pcc_temp); /* add the printable chars of the client to the global pcc for server's statistics */
         free(pcc_temp);
-        close(fconnection);
-        fconnection = 0;
     }
 }
